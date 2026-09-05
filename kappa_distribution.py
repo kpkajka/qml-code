@@ -65,26 +65,6 @@ def main():
         if k.size == 0:
             print(f"{name:<16}{'(none found)':>28}")
             continue
-        color = COLORS.get(name, "#C44E52")
-
-        fig, ax = plt.subplots(figsize=(6.5, 4.5))
-        ax.hist(k, bins=args.bins, color=color, edgecolor="white", alpha=0.85)
-        ax.axvline(np.median(k), color="black", ls="--", lw=1.5, label=f"Median = {np.median(k):+.3f}")
-        ax.plot([], [], ' ', label=f"Median $|\\kappa|$ = {np.median(np.abs(k)):.3f}")
-        ax.set_xlabel(r"Trained Kerr strength $\kappa$", fontsize=13)
-        ax.set_ylabel("Count (over seeds, layers, modes)", fontsize=13)
-        ax.set_title(f"{name}: distribution of trained $\\kappa$", fontsize=13)
-        ax.legend(fontsize=10, loc="upper right")
-        ax.grid(axis="y", alpha=0.25)
-        fig.tight_layout()
-
-        base = os.path.join(args.outdir, f"kappa_{slug(name)}")
-        for ext in ("png", "pdf"):
-            fig.savefig(f"{base}.{ext}", dpi=150)
-        plt.close(fig)
-        print(f"{name:<16}{k.size:>8}{np.median(np.abs(k)):>11.3f}"
-              f"{k.mean():>9.3f}{k.std():>9.3f}   -> {base}.png/.pdf")
-
 
 if __name__ == "__main__":
     main()
