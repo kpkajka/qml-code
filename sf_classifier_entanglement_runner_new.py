@@ -80,21 +80,20 @@ configure_tf_threading()
 
 # Global constants and hyperparameters
 
-SEED = 7
-#DEFAULT_PATH = "/rds/general/user/lr1424/home/1P1Qm_SF/flat_train/TTBar+ZJets_flat.h5"  #old dataset
-#DEFAULT_PATH = "/rds/general/user/kp125/home/project/data/HToCC_vs_ZJets_flat.h5"        #new dataset
+SEED = 0                   # default seed
 CUTOFF = 6                 # number of Fock states that define the Hilbert space
-EPOCHS = 100 #60 #40       # cap on epochs so it doesnt go on forever
+EPOCHS = 100               # cap on number of epochs so it doesnt go on forever
 BATCH = 8                  # batch size
-LR = 0.01
+LR = 0.01                  # learning rate
 
-# For early stopping
-PATIENCE = 12 #6          # AUC is noisier than loss; give it room
-MIN_DELTA = 1e-4 #1e-3
-LR_PATIENCE = 5 #4        # plateau epochs before dropping LR
+# Early stopping settings
+PATIENCE = 12 
+MIN_DELTA = 1e-4 
+LR_PATIENCE = 5           # plateau epochs before dropping LR
 LR_FACTOR = 0.5           # multiply LR by this
 MIN_LR = 1e-4
 
+# Training, validation, testing split
 N_TRAIN_PER_CLASS = 1500
 N_VAL_PER_CLASS = 300
 N_TEST_PER_CLASS = 500
@@ -103,7 +102,7 @@ N_TEST_PER_CLASS = 500
 BS_THETA = np.pi / 4.0
 BS_PHI = np.pi / 2.0
 
-# Cap on mid-circuit squeeze magnitude (sinh^2(0.55) ~ 0.33 photons/mode)
+# Cap on mid-circuit squeeze magnitude 
 MID_SQ_CAP = 0.55
 ENC_DISP_CAP = 2.0
 
@@ -119,7 +118,6 @@ ARCH_LIST = [
     "trainable_star",
     "maximally_entangled",
     "new_entangled",
-    "new_entangled_ck",
     "new_entangled_k",
     "new_entangled_kck",
     "new_entangled_k0",
@@ -133,7 +131,6 @@ LOCAL_GATES = ["none", "rgate", "sgate", "srgate", "drs", "kerr", "drs_kerr"]
 # Measurement schemes
 OBSERVABLE_READOUTS = ["mean_photon", "richer_joint"]
 
-# Which architectures are simple enough to run through the fast batched backend 
 STANDARD_BATCHED_ARCH_LIST = [
     "fixed_ring",
     "trainable_ring",
@@ -432,13 +429,6 @@ def pos_amp_capped(r):
 def pos_scale_sq(r):
     return 0.5 * tf.math.sigmoid(r) + 0.05     # squeeze magnitude capped at ~0.55
 
-# Capping squeeze for DSK runs (revert to commented out one for DSR runs)
-#def pos_scale_sq(r):
-#    return 0.30 * tf.math.sigmoid(r) + 0.05   # was 0.5 -> caps squeeze r at ~0.35
-
-#def pos_scale_kerr(r):
-#    return 0.3 * tf.math.sigmoid(r) + 0.02   # was pos_scale (2.0 ceiling) -> ~7x weaker Kerr
-
 # Various encoding modes
 def init_encoder_vars(n_modes, seed, encoding_mode):
     init = tf.keras.initializers.RandomNormal(mean=0.0, stddev=0.03, seed=seed)
@@ -535,37 +525,8 @@ def init_arch_vars(arch, pairs, n_modes, n_layers, seed, ck_topology="chain", us
         }
 
     
-    if arch == "new_entangled_ck":
-        # Int-S-K-Int: same mesh as new_entangled, plus a NON-GAUSSIAN core
-        # (self-Kerr + cross-Kerr) sitting BETWEEN the two interferometers.
-        if not hasattr(ops, "CKgate"):
-            raise SystemExit(
-                "This Strawberry Fields build has no ops.CKgate (cross-Kerr)."
-            )
-        mesh_layers = bs_mesh_pairs_layers(n_modes, depth=n_modes)
-        n_pairs_total = sum(len(layer_pairs) for layer_pairs in mesh_layers)
-        ck_pairs = TOPOS[ck_topology](n_modes)
-        out = {
-            "mesh_layers": mesh_layers,
-            "ck_pairs": ck_pairs,
-            "int1_theta": tf.Variable(init((n_layers, n_pairs_total)), dtype=tf.float32),
-            "int1_phi": tf.Variable(init((n_layers, n_pairs_total)), dtype=tf.float32),
-            "int2_theta": tf.Variable(init((n_layers, n_pairs_total)), dtype=tf.float32),
-            "int2_phi": tf.Variable(init((n_layers, n_pairs_total)), dtype=tf.float32),
-            "mid_sq_r": tf.Variable(init((n_layers, n_modes)), dtype=tf.float32),
-            "mid_sq_phi": tf.Variable(init((n_layers, n_modes)), dtype=tf.float32),
-            # cross-Kerr: CK(k) = exp(i * k * n_a * n_b)
-            "ck_kappa": tf.Variable(init((n_layers, len(ck_pairs))), dtype=tf.float32),
-        }
-        if use_self_kerr:
-            # single-mode Kerr: K(k) = exp(i * k * n^2)
-            out["mid_kappa"] = tf.Variable(init((n_layers, n_modes)), dtype=tf.float32)
-        return out
-
-
     if arch == "new_entangled_kck":
-        # Int-K-CK-Int: self-Kerr + cross-Kerr between the interferometers,
-        # NO mid squeeze.
+        # Int-K-CK-Int: self-Kerr + cross-Kerr between the interferometers
         if not hasattr(ops, "CKgate"):
             raise SystemExit("This Strawberry Fields build has no ops.CKgate (cross-Kerr).")
         mesh_layers = bs_mesh_pairs_layers(n_modes, depth=n_modes)
@@ -586,10 +547,7 @@ def init_arch_vars(arch, pairs, n_modes, n_layers, seed, ck_topology="chain", us
 
 
     if arch == "new_entangled_k":
-        # Int-K-Int: single-mode Kerr in place of the mid squeeze. No squeeze,
-        # no cross-Kerr. Kerr adds NO photons (phase-only), so leakage here is
-        # driven only by the encoder; the second interferometer makes the Kerr
-        # phases visible to the number-basis readout.
+        # Int-K-Int: single-mode Kerr in place of the mid squeeze
         mesh_layers = bs_mesh_pairs_layers(n_modes, depth=n_modes)
         n_pairs_total = sum(len(layer_pairs) for layer_pairs in mesh_layers)
         return {
@@ -604,6 +562,7 @@ def init_arch_vars(arch, pairs, n_modes, n_layers, seed, ck_topology="chain", us
  
 
     if arch == "new_entangled_k0":
+        # Single mode kerr on 0-th mode, squeeze on rest
         mesh_layers = bs_mesh_pairs_layers(n_modes, depth=n_modes)
         n_pairs_total = sum(len(layer_pairs) for layer_pairs in mesh_layers)
         return {
@@ -870,41 +829,6 @@ def apply_architecture(q, arch, pairs, n_modes, n_layers, arch_vars, local_vars,
             apply_local_gates(q, n_modes, layer_idx, local_vars, local_gates)
         return
     
-
-    # Int-S-K-Int: non-Gaussian core between the two interferometers
-    if arch == "new_entangled_ck":
-        mesh_layers = arch_vars["mesh_layers"]
-        for layer_idx in range(n_layers):
-            # Interferometer 1
-            pair_idx = 0
-            for layer_pairs in mesh_layers:
-                for a, b in layer_pairs:
-                    ops.BSgate(arch_vars["int1_theta"][layer_idx, pair_idx], arch_vars["int1_phi"][layer_idx, pair_idx]) | (q[a], q[b])
-                    pair_idx += 1
- 
-            # Non-Gaussian core. Kerr gates are diagonal in the Fock basis:
-            # they imprint phases and do NOT change photon-number populations,
-            # so they must be followed by linear optics (interferometer 2) for
-            # their effect to reach a number-basis readout.
-            for w in range(n_modes):
-                #ops.Sgate(arch_vars["mid_sq_r"][layer_idx, w], arch_vars["mid_sq_phi"][layer_idx, w]) | q[w]
-                ops.Sgate(MID_SQ_CAP * tf.math.tanh(arch_vars["mid_sq_r"][layer_idx, w]), arch_vars["mid_sq_phi"][layer_idx, w]) | q[w]
-            if "mid_kappa" in arch_vars:
-                for w in range(n_modes):
-                    ops.Kgate(arch_vars["mid_kappa"][layer_idx, w]) | q[w]
-            for pair_idx, (a, b) in enumerate(arch_vars["ck_pairs"]):
-                ops.CKgate(arch_vars["ck_kappa"][layer_idx, pair_idx]) | (q[a], q[b])
- 
-            # Interferometer 2 -- makes the Kerr phases observable
-            pair_idx = 0
-            for layer_pairs in mesh_layers:
-                for a, b in layer_pairs:
-                    ops.BSgate(arch_vars["int2_theta"][layer_idx, pair_idx], arch_vars["int2_phi"][layer_idx, pair_idx]) | (q[a], q[b])
-                    pair_idx += 1
- 
-            apply_local_gates(q, n_modes, layer_idx, local_vars, local_gates)
-        return
-
 
     # Int-K-Int: non-Gaussian core between the two interferometers
     if arch == "new_entangled_kck":
@@ -1710,8 +1634,8 @@ def main():
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--encoding_mode", type=str, default="trainable_per_mode", choices=ENCODING_MODES)
     ap.add_argument("--observable_readout", type=str, default="mean_photon", choices=OBSERVABLE_READOUTS)
-    ap.add_argument("--ck_topology", type=str, default="chain", choices=sorted(TOPOS.keys()), help="Cross-Kerr connectivity for new_entangled_ck")
-    ap.add_argument("--no_self_kerr", action="store_true",help="new_entangled_ck: cross-Kerr only (drop the single-mode Kgate)")
+    ap.add_argument("--ck_topology", type=str, default="chain", choices=sorted(TOPOS.keys()), help="Cross-Kerr connectivity for new_entangled_kck")
+    ap.add_argument("--no_self_kerr", action="store_true",help="new_entangled_kck: cross-Kerr only (drop the single-mode Kgate)")
     ap.add_argument("--save_epoch_parameter_history", action="store_true")
     ap.add_argument("--save_step_training_history", action="store_true")
     ap.add_argument("--save_step_parameter_history", action="store_true")
@@ -1743,8 +1667,7 @@ def main():
 
     encoding_tag = "" if args.encoding_mode == "trainable_per_mode" else f"_enc{args.encoding_mode}"
     observable_tag = "" if args.observable_readout == "mean_photon" else f"_obs{args.observable_readout}"
-    #ck_tag = "" if args.arch != "new_entangled_ck" else f"_ck{args.ck_topology}{'only' if args.no_self_kerr else ''}"
-    ck_tag = "" if args.arch not in ("new_entangled_ck", "new_entangled_kck") else f"_ck{args.ck_topology}{'only' if args.no_self_kerr else ''}"
+    ck_tag = "" if args.arch not in ("new_entangled_kck") else f"_ck{args.ck_topology}{'only' if args.no_self_kerr else ''}"
     run_name = f"clf_{args.arch}_lg{args.local_gates}{encoding_tag}{observable_tag}{ck_tag}_m{args.modes}_L{args.layers}"
 
     #run_name = f"clf_{args.arch}_lg{args.local_gates}{encoding_tag}{observable_tag}_m{args.modes}_L{args.layers}"
@@ -1760,7 +1683,7 @@ def main():
     #if args.cutoff != CUTOFF:
     outdir = outdir / f"cutoff_{args.cutoff}"
 
-    if args.arch in ("new_entangled_ck", "new_entangled_kck"):
+    if args.arch in ("new_entangled_kck"):
         self_tag = "ckonly" if args.no_self_kerr else "selfkerr"
         outdir = outdir / f"ck_{args.ck_topology}_{self_tag}"
     outdir = outdir / f"seed{args.seed}"
@@ -1832,7 +1755,7 @@ def main():
     clf_head = init_classifier_head_for_readout(args.modes, args.seed, args.observable_readout)
 
     train_vars = list(enc_vars.values()) + list(clf_head.values())
-    if args.arch.startswith("trainable_") or args.arch in {"new_entangled", "new_entangled_ck", "new_entangled_k", "new_entangled_kck", "new_entangled_k0", "new_circuit_like"}:
+    if args.arch.startswith("trainable_") or args.arch in {"new_entangled", "new_entangled_k", "new_entangled_kck", "new_entangled_k0", "new_circuit_like"}:
         for value in arch_vars.values():
             if isinstance(value, tf.Variable):
                 train_vars.append(value)
